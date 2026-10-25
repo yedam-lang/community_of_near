@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { sb, VIS, ytId, fmtReg, toast, ok, todayKST, SU_URL } from '@/lib/supabase';
 
-const TABS = [['home','홈'],['pray','묵상·기도'],['meet','모임'],['share','나눔'],['card','내 카드']];
+const TABS = [['home','홈'],['med','묵상'],['pray','기도'],['meet','모임·나눔'],['card','내 카드']];
+const Seg = ({ items, v, set }: any) => <div className="tabs">{items.map(([k,l]:any)=><button key={k} className={v===k?'on':''} onClick={()=>set(k)}>{l}</button>)}</div>;
 const ago = (s:string) => new Date(s).toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
 
 export default function MemberApp({ me, signOut }: any) {
@@ -17,7 +18,7 @@ export default function MemberApp({ me, signOut }: any) {
       sb.from('sermons').select('*').order('preached_on',{ascending:false}),
       sb.from('app_settings').select('value').eq('key','qr_url').maybeSingle(),
       sb.from('meditations').select('*, author:members(name)').order('created_at',{ascending:false}).limit(50),
-      sb.from('prayers').select('*, author:members(name,well)').order('created_at',{ascending:false}).limit(50),
+      sb.from('prayers').select('*, author:members(name,well)').order('created_at',{ascending:false}).limit(150),
       sb.from('groups').select('*, host:members(name), gm:group_members(user_id, user:members(name))').order('created_at',{ascending:false}),
       sb.from('events').select('*').order('created_at',{ascending:false}),
       sb.from('shares').select('*, author:members(name)').order('created_at',{ascending:false}).limit(50),
@@ -35,9 +36,9 @@ export default function MemberApp({ me, signOut }: any) {
   return (
     <div className="wrap">
       {tab==='home' && <Home {...props} />}
+      {tab==='med' && <Med {...props} />}
       {tab==='pray' && <Pray {...props} />}
-      {tab==='meet' && <Meet {...props} />}
-      {tab==='share' && <Share {...props} />}
+      {tab==='meet' && <MeetShare {...props} />}
       {tab==='card' && <Card {...props} qr={qr} signOut={signOut} />}
       <nav className="tabbar">{TABS.map(([k,l]) => <button key={k} className={tab===k?'on':''} onClick={()=>setTab(k)}>{l}</button>)}</nav>
     </div>
@@ -82,23 +83,50 @@ function Home({ me, d }: any) {
   </>;
 }
 
-function Pray({ me, d, act, report }: any) {
-  const [m, setM] = useState(''); const [p, setP] = useState(''); const [vis, setVis] = useState('전체');
+function Med({ me, d, act, report }: any) {
+  const [m, setM] = useState('');
   return <>
-    <h1>묵상 · 기도</h1>
+    <h1>묵상</h1>
     <div className="card"><h2>묵상 나누기</h2>
       <textarea value={m} onChange={e=>setM(e.target.value)} placeholder="오늘 마음에 남은 한 줄" />
       <button disabled={!m.trim()} onClick={()=>{act(sb.from('meditations').insert({ body:m.trim() }),'올렸어요');setM('');}}>올리기</button></div>
     {d.med?.map((x:any)=><div key={x.id} className="card"><div className="row between"><b>{x.author?.name}</b><span className="mute">{ago(x.created_at)}</span></div>
       <div style={{whiteSpace:'pre-wrap'}}>{x.body}</div>
       <div className="row"><button className="link" onClick={()=>report('meditation',x.id)}>신고</button>{x.author_id===me.id && <button className="link" onClick={()=>act(sb.from('meditations').delete().eq('id',x.id))}>삭제</button>}</div></div>)}
-    <div className="card"><h2>기도제목 올리기</h2>
+  </>;
+}
+
+const TO_ME = ['우물장 + 목회자','목회자'];
+function Pray({ me, d, act, report }: any) {
+  const minister = me.role==='사역자';
+  const subs: [string,string][] = [['all','전체 기도']];
+  if (!minister) subs.push(['well', me.well ? `${me.well} 기도` : '우물 기도']);
+  if (minister || me.role==='우물장') subs.push(['tome','나에게 온 기도']);
+  const [sub, setSub] = useState('all');
+  const [p, setP] = useState(''); const [vis, setVis] = useState('전체');
+  const pick = (k:string) => { setSub(k); if (k==='all') setVis('전체'); if (k==='well') setVis('소속 우물'); };
+  const list = (d.pr||[]).filter((x:any) => sub==='all' ? x.vis==='전체' : sub==='well' ? x.vis==='소속 우물' : TO_ME.includes(x.vis) && x.author_id!==me.id);
+  const empty = sub==='tome' ? '아직 받은 기도제목이 없어요.' : '아직 기도제목이 없어요.';
+  return <>
+    <h1>기도</h1>
+    <Seg items={subs} v={sub} set={pick} />
+    {sub!=='tome' && <div className="card"><h2>기도제목 올리기</h2>
       <textarea value={p} onChange={e=>setP(e.target.value)} placeholder="기도제목" />
       <label>공개 범위</label><select value={vis} onChange={e=>setVis(e.target.value)}>{VIS.map(v=><option key={v}>{v}</option>)}</select>
-      <button disabled={!p.trim()} onClick={()=>{act(sb.from('prayers').insert({ body:p.trim(), vis }),'올렸어요');setP('');}}>올리기</button></div>
-    {d.pr?.map((x:any)=><div key={x.id} className="card"><div className="row between"><b>{x.author?.name}</b><span className="pill">{x.vis}</span></div>
+      <button disabled={!p.trim()} onClick={()=>{act(sb.from('prayers').insert({ body:p.trim(), vis }),'올렸어요');setP('');}}>올리기</button></div>}
+    {list.map((x:any)=><div key={x.id} className="card"><div className="row between"><b>{x.author?.name}{sub==='tome' && x.author?.well ? ` · ${x.author.well}` : ''}</b><span className="pill">{x.vis}</span></div>
       <div style={{whiteSpace:'pre-wrap'}}>{x.body}</div>
-      <div className="row"><button className="link" onClick={()=>report('prayer',x.id)}>신고</button>{x.author_id===me.id && <button className="link" onClick={()=>act(sb.from('prayers').delete().eq('id',x.id))}>삭제</button>}</div></div>)}
+      <div className="row"><span className="mute">{ago(x.created_at)}</span><button className="link" onClick={()=>report('prayer',x.id)}>신고</button>{x.author_id===me.id && <button className="link" onClick={()=>act(sb.from('prayers').delete().eq('id',x.id))}>삭제</button>}</div></div>)}
+    {!list.length && <div className="mute">{empty}</div>}
+  </>;
+}
+
+function MeetShare(props: any) {
+  const [sub, setSub] = useState('meet');
+  return <>
+    <h1>모임 · 나눔</h1>
+    <Seg items={[['meet','모임'],['share','나눔']]} v={sub} set={setSub} />
+    {sub==='meet' ? <Meet {...props} /> : <Share {...props} />}
   </>;
 }
 
@@ -106,7 +134,6 @@ function Meet({ me, d, act }: any) {
   const [t, setT] = useState(''); const [w, setW] = useState(''); const [cap, setCap] = useState(8);
   const regOf = (id:number) => d.regs?.find((r:any)=>r.event_id===id && r.user_id===me.id);
   return <>
-    <h1>모임</h1>
     <div className="card"><h2>소모임 열기</h2>
       <input placeholder="모임 이름" value={t} onChange={e=>setT(e.target.value)} />
       <input placeholder="일시 (예: 수요일 저녁 8시)" value={w} onChange={e=>setW(e.target.value)} />
@@ -130,7 +157,6 @@ function Meet({ me, d, act }: any) {
 function Share({ me, d, act, report }: any) {
   const [f, setF] = useState({ kind:'물품', title:'', body:'' });
   return <>
-    <h1>나눔</h1>
     <div className="card"><div className="row">{['물품','재능'].map(k=><button key={k} className={'sm '+(f.kind===k?'':'line')} onClick={()=>setF({...f,kind:k})}>{k}</button>)}</div>
       <input placeholder="제목" value={f.title} onChange={e=>setF({...f,title:e.target.value})} style={{marginTop:10}} />
       <textarea placeholder="설명" value={f.body} onChange={e=>setF({...f,body:e.target.value})} />
