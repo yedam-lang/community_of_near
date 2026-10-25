@@ -51,6 +51,16 @@ function Home({ me, d }: any) {
   const latest = list[0];
   const s = list.find((x:any)=>x.id===sel) || latest;
   const past = list.filter((x:any)=>x.id!==latest?.id);
+  useEffect(() => {
+    const o: any = (screen as any).orientation;
+    const h = () => {
+      if (!o?.lock) return;
+      if (document.fullscreenElement) o.lock('landscape').catch(() => {});
+      else { try { o.unlock(); } catch {} }
+    };
+    document.addEventListener('fullscreenchange', h);
+    return () => document.removeEventListener('fullscreenchange', h);
+  }, []);
   return <>
     <h1>안녕하세요, {me.name}님</h1>
     {d.notice && <div className="alert"><b>긴급 공지 · {d.notice.title}</b><div>{d.notice.body}</div></div>}
@@ -61,12 +71,13 @@ function Home({ me, d }: any) {
       {s ? <><iframe key={s.id} className="video" src={`https://www.youtube-nocookie.com/embed/${ytId(s.youtube_url)}`} allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
         <div className="mute" style={{marginTop:6}}>{s.title} · {s.preached_on}</div>
         {s.id!==latest?.id && <button className="link" onClick={()=>setSel(null)}>이번 주 설교로 돌아가기</button>}</> : <div className="mute">등록된 설교가 없어요.</div>}
-      {past.length>0 && <div style={{marginTop:10}}>
+      <div style={{marginTop:10}}>
         <button className="line sm" onClick={()=>setOpen(!open)}>{open ? '지난 설교 닫기' : `지난 설교 보기 (${past.length})`}</button>
-        {open && <div style={{marginTop:8}}>{past.map((x:any)=><div key={x.id} className="row between" style={{padding:'6px 0'}}>
+        {open && !past.length && <div className="mute" style={{marginTop:8}}>아직 지난 설교가 없어요.</div>}
+        {open && past.length>0 && <div style={{marginTop:8}}>{past.map((x:any)=><div key={x.id} className="row between" style={{padding:'6px 0'}}>
           <span className="grow mute">{x.title} · {x.preached_on}</span>
           <button className="sm line" onClick={()=>{setSel(x.id);window.scrollTo({top:0,behavior:'smooth'});}}>{sel===x.id?'재생 중':'재생'}</button></div>)}</div>}
-      </div>}
+      </div>
     </div>
   </>;
 }
