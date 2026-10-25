@@ -46,17 +46,27 @@ export default function MemberApp({ me, signOut }: any) {
 
 function Home({ me, d }: any) {
   const [sel, setSel] = useState<number|null>(null);
-  const s = d.sermons?.find((x:any)=>x.id===sel) || d.sermons?.[0];
+  const [open, setOpen] = useState(false);
+  const list = d.sermons || [];              // 최신순
+  const latest = list[0];
+  const s = list.find((x:any)=>x.id===sel) || latest;
+  const past = list.filter((x:any)=>x.id!==latest?.id);
   return <>
     <h1>안녕하세요, {me.name}님</h1>
     {d.notice && <div className="alert"><b>긴급 공지 · {d.notice.title}</b><div>{d.notice.body}</div></div>}
     {(d.plan || d.verse) && <div className="card"><div className="mute">오늘의 본문 · 매일성경</div><h2>{d.plan || d.verse?.ref}</h2>
       {d.verse?.note && <div className="mute">{d.verse.note}</div>}
       <a href={SU_URL} target="_blank" rel="noopener noreferrer"><button className="line sm" style={{marginTop:8}}>매일성경에서 읽기</button></a></div>}
-    <div className="card"><h2>주일 설교</h2>
-      {s ? <><iframe className="video" src={`https://www.youtube-nocookie.com/embed/${ytId(s.youtube_url)}`} allow="encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
-        <div className="mute" style={{marginTop:6}}>{s.title} · {s.preached_on}</div></> : <div className="mute">등록된 설교가 없어요.</div>}
-      {d.sermons?.length>1 && <div style={{marginTop:8}}>{d.sermons.map((x:any)=><div key={x.id} className="row between"><span className="mute">{x.title} · {x.preached_on}</span><button className="sm line" onClick={()=>setSel(x.id)}>재생</button></div>)}</div>}
+    <div className="card"><h2>{s && s.id!==latest?.id ? '지난 설교' : '이번 주 설교'}</h2>
+      {s ? <><iframe key={s.id} className="video" src={`https://www.youtube-nocookie.com/embed/${ytId(s.youtube_url)}`} allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+        <div className="mute" style={{marginTop:6}}>{s.title} · {s.preached_on}</div>
+        {s.id!==latest?.id && <button className="link" onClick={()=>setSel(null)}>이번 주 설교로 돌아가기</button>}</> : <div className="mute">등록된 설교가 없어요.</div>}
+      {past.length>0 && <div style={{marginTop:10}}>
+        <button className="line sm" onClick={()=>setOpen(!open)}>{open ? '지난 설교 닫기' : `지난 설교 보기 (${past.length})`}</button>
+        {open && <div style={{marginTop:8}}>{past.map((x:any)=><div key={x.id} className="row between" style={{padding:'6px 0'}}>
+          <span className="grow mute">{x.title} · {x.preached_on}</span>
+          <button className="sm line" onClick={()=>{setSel(x.id);window.scrollTo({top:0,behavior:'smooth'});}}>{sel===x.id?'재생 중':'재생'}</button></div>)}</div>}
+      </div>}
     </div>
   </>;
 }
