@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { sb, VIS, ytId, fmtReg, toast, ok } from '@/lib/supabase';
+import { sb, VIS, ytId, fmtReg, toast, ok, todayKST, SU_URL } from '@/lib/supabase';
 
 const TABS = [['home','홈'],['pray','묵상·기도'],['meet','모임'],['share','나눔'],['card','내 카드']];
 const ago = (s:string) => new Date(s).toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
@@ -11,7 +11,7 @@ export default function MemberApp({ me, signOut }: any) {
   const [d, setD] = useState<any>({});
   const [qr, setQr] = useState('');
   const load = async () => {
-    const [verse, notice, sermons, qrs, med, pr, groups, events, shares, regs] = await Promise.all([
+    const [verse, notice, sermons, qrs, med, pr, groups, events, shares, regs, plan] = await Promise.all([
       sb.from('daily_verse').select('*').maybeSingle(),
       sb.from('notices').select('*').order('created_at',{ascending:false}).limit(1),
       sb.from('sermons').select('*').order('preached_on',{ascending:false}),
@@ -22,8 +22,9 @@ export default function MemberApp({ me, signOut }: any) {
       sb.from('events').select('*').order('created_at',{ascending:false}),
       sb.from('shares').select('*, author:members(name)').order('created_at',{ascending:false}).limit(50),
       sb.from('event_regs').select('*'),
+      sb.from('reading_plan').select('ref').eq('day', todayKST()).maybeSingle(),
     ]);
-    setD({ verse:verse.data, notice:notice.data?.[0], sermons:sermons.data||[], qrUrl:qrs.data?.value, med:med.data||[], pr:pr.data||[], groups:groups.data||[], events:events.data||[], shares:shares.data||[], regs:regs.data||[] });
+    setD({ verse:verse.data, plan:plan.data?.ref, notice:notice.data?.[0], sermons:sermons.data||[], qrUrl:qrs.data?.value, med:med.data||[], pr:pr.data||[], groups:groups.data||[], events:events.data||[], shares:shares.data||[], regs:regs.data||[] });
     if (qrs.data?.value) QRCode.toString(qrs.data.value,{type:'svg',margin:0}).then(setQr);
   };
   useEffect(() => { load(); }, []);
@@ -49,7 +50,9 @@ function Home({ me, d }: any) {
   return <>
     <h1>안녕하세요, {me.name}님</h1>
     {d.notice && <div className="alert"><b>긴급 공지 · {d.notice.title}</b><div>{d.notice.body}</div></div>}
-    {d.verse && <div className="card"><div className="mute">오늘의 본문</div><h2>{d.verse.ref}</h2><div className="mute">{d.verse.note}</div></div>}
+    {(d.plan || d.verse) && <div className="card"><div className="mute">오늘의 본문 · 매일성경</div><h2>{d.plan || d.verse?.ref}</h2>
+      {d.verse?.note && <div className="mute">{d.verse.note}</div>}
+      <a href={SU_URL} target="_blank" rel="noopener noreferrer"><button className="line sm" style={{marginTop:8}}>매일성경에서 읽기</button></a></div>}
     <div className="card"><h2>주일 설교</h2>
       {s ? <><iframe className="video" src={`https://www.youtube-nocookie.com/embed/${ytId(s.youtube_url)}`} allow="encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
         <div className="mute" style={{marginTop:6}}>{s.title} · {s.preached_on}</div></> : <div className="mute">등록된 설교가 없어요.</div>}

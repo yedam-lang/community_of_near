@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { sb, WELLS, ROLES, VIS, fmtReg, ytId, toast, ok } from '@/lib/supabase';
+import { sb, WELLS, ROLES, VIS, fmtReg, ytId, toast, ok, todayKST, parsePlan } from '@/lib/supabase';
 
 const TABS = [['join','가입 승인'],['well','우물 관리'],['pray','기도 요청'],['rep','신고·이력'],['con','콘텐츠'],['meet','모임·행사']];
 
@@ -8,7 +8,7 @@ export default function Admin({ signOut, kind }: any) {
   const [tab, setTab] = useState('join');
   const [d, setD] = useState<any>({});
   const load = async () => {
-    const [mem, pr, rep, log, sermons, groups, events, regs, qr, verse] = await Promise.all([
+    const [mem, pr, rep, log, sermons, groups, events, regs, qr, verse, plan] = await Promise.all([
       sb.from('members').select('*, c:member_contacts(phone)').order('created_at'),
       sb.from('prayers').select('*, author:members(name,well,role)').order('created_at',{ascending:false}),
       sb.from('reports').select('*, who:members(name)').order('created_at',{ascending:false}),
@@ -19,8 +19,9 @@ export default function Admin({ signOut, kind }: any) {
       sb.from('event_regs').select('*, user:members(name)'),
       sb.from('app_settings').select('value').eq('key','qr_url').maybeSingle(),
       sb.from('daily_verse').select('*').maybeSingle(),
+      sb.from('reading_plan').select('*').gte('day', todayKST()).order('day').limit(60),
     ]);
-    setD({ mem:mem.data||[], pr:pr.data||[], rep:rep.data||[], log:log.data||[], sermons:sermons.data||[], groups:groups.data||[], events:events.data||[], regs:regs.data||[], qr:qr.data?.value||'', verse:verse.data });
+    setD({ mem:mem.data||[], pr:pr.data||[], rep:rep.data||[], log:log.data||[], sermons:sermons.data||[], groups:groups.data||[], events:events.data||[], regs:regs.data||[], qr:qr.data?.value||'', verse:verse.data, plan:plan.data||[] });
   };
   useEffect(() => { load(); }, []);
   const act = async (p: PromiseLike<any>, msg?: string, log?: string) => { const r = await p; if (ok(r)) { if (log) await sb.from('admin_log').insert({ text: log }); if (msg) toast(msg); load(); } };
@@ -99,9 +100,11 @@ function Con({ d, act }: any) {
       <select value={n.target} onChange={e=>setN({...n,target:e.target.value})}>{['전체',...WELLS].map(x=><option key={x}>{x}</option>)}</select>
       <button disabled={!n.title.trim()} onClick={()=>{act(sb.from('notices').insert(n),'올렸어요',`긴급 공지: ${n.title} (${n.target})`);setN({title:'',body:'',target:'전체'});}}>올리기</button>
       <div className="mute" style={{marginTop:6}}>앱 안 공지입니다. 휴대폰 푸시 알림은 아직 연결되지 않았어요.</div></div>
-    <div className="card"><h2>오늘의 본문</h2>
-      <input value={vv.ref} onChange={e=>setVerse({...vv,ref:e.target.value})} /><input value={vv.note} onChange={e=>setVerse({...vv,note:e.target.value})} />
-      <button onClick={()=>act(sb.from('daily_verse').update({ ref:vv.ref, note:vv.note }).eq('id',1),'게시했어요','오늘의 본문 게시')}>게시하기</button></div>
+    <Plan d={d} act={act} />
+    <div className="card"><h2>읽기표가 없는 날의 본문 · 안내 문구</h2>
+      <label>본문</label><input value={vv.ref} onChange={e=>setVerse({...vv,ref:e.target.value})} />
+      <label>안내 문구 (매일 함께 표시)</label><input value={vv.note} onChange={e=>setVerse({...vv,note:e.target.value})} />
+      <button onClick={()=>act(sb.from('daily_verse').update({ ref:vv.ref, note:vv.note }).eq('id',1),'저장했어요','기본 본문 변경')}>저장</button></div>
     <div className="card"><h2>QR 연결 링크</h2>
       <input value={qq} onChange={e=>setQr(e.target.value)} placeholder="https://" />
       <button disabled={!/^https?:\/\/\S+$/.test(qq)} onClick={()=>act(sb.from('app_settings').update({ value:qq }).eq('key','qr_url'),'저장했어요','QR 링크 변경')}>저장</button></div>
@@ -122,4 +125,18 @@ function Meet({ d, act }: any) {
     {d.events?.map((ev:any)=>{ const r = (st:string)=>(d.regs||[]).filter((x:any)=>x.event_id===ev.id&&x.status===st).map((x:any)=>x.user?.name).join(', ');
       return <div key={ev.id} className="card"><div className="row between"><b>{ev.title}</b><span className="pill">{ev.kind} · 정원 {ev.cap}</span></div>
         <div className="mute">신청 {r('reg')||'-'}</div><div className="mute">대기 {r('wait')||'-'}</div><div className="mute">취소 {r('cancel')||'-'}</div></div>; })}</>;
+}
+
+function Plan({ d, act }: any) {
+  const [t, setT] = useState('');
+  const { rows, bad } = parsePlan(t);
+  const save = async () => { await act(sb.from('reading_plan').upsert(rows, { onConflict:'day' }), `${rows.length}일 등록했어요`, `읽기표 ${rows.length}일 등록`); setT(''); };
+  return <div className="card"><h2>매일성경 읽기표</h2>
+    <div className="mute">한 줄에 하루씩 붙여 넣으세요. 같은 날짜는 새 값으로 바뀌어요.</div>
+    <textarea value={t} onChange={e=>setT(e.target.value)} placeholder={'11/1 야고보서 5:13-20\n11/2 베드로전서 1:1-12'} style={{minHeight:140}} />
+    {t.trim() && <div className="mute">{rows.length}일 인식{bad.length ? ` · 인식 못 한 줄 ${bad.length}개: ${bad.slice(0,3).join(' / ')}` : ''}</div>}
+    <button disabled={!rows.length || bad.length>0} onClick={save}>등록</button>
+    <div style={{marginTop:12}}>{(d.plan||[]).map((p:any)=><div key={p.day} className="row between"><span>{p.day.slice(5).replace('-','/')} · {p.ref}</span>
+      <button className="link" onClick={()=>act(sb.from('reading_plan').delete().eq('day',p.day),'지웠어요')}>삭제</button></div>)}
+      {!d.plan?.length && <div className="mute">등록된 읽기표가 없어요.</div>}</div></div>;
 }
